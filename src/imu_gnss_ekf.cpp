@@ -93,8 +93,8 @@ void FusionNode::gps_callback(const sensor_msgs::NavSatFixConstPtr &gps_msg) {
   const auto &residual = ekf_ptr_->observer_ptr_->measurement_residual(Twb.matrix(), p_G_Gps);
 
   std::cout << "res: " << residual.transpose() << std::endl;
-  e += residual.transpose();
-  std::cout << e << std::endl;
+  e += residual;
+  std::cout << e.transpose() << std::endl;
 
   const auto &H = ekf_ptr_->observer_ptr_->measurement_jacobian(Twb.matrix(), p_G_Gps);
 
