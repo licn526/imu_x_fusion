@@ -98,7 +98,6 @@ void FusionNode::gps_callback(const sensor_msgs::NavSatFixConstPtr &gps_msg) {
   sum_of_res += residual;
   sum_of_res_sqaure += residual * residual;
   expect_of_res = sum_of_res / rescnt;
-  variance_of_res = sum_of_res_sqaure / rescnt - expect_of_res * expect_of_res;
   std::cout << "sum of res:" << sum_of_res.transpose() << std::endl;
   std::cout << "expect of res: " << expect_of_res.transpose() << std::endl;
   std::cout << "variance of res: " << variance_of_res.transpose() << std::endl;
