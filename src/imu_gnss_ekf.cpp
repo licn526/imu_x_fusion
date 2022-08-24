@@ -9,6 +9,9 @@
 #include "estimator/ekf.hpp"
 #include "sensor/gnss.hpp"
 
+Eigen::Vector3d e;
+e << 0, 0, 0;
+
 namespace cg {
 
 ANGULAR_ERROR State::kAngError = ANGULAR_ERROR::LOCAL_ANGULAR_ERROR;
@@ -91,6 +94,8 @@ void FusionNode::gps_callback(const sensor_msgs::NavSatFixConstPtr &gps_msg) {
   const auto &residual = ekf_ptr_->observer_ptr_->measurement_residual(Twb.matrix(), p_G_Gps);
 
   std::cout << "res: " << residual.transpose() << std::endl;
+  e += residual.transpose();
+  std::cout << e << std::endl;
 
   const auto &H = ekf_ptr_->observer_ptr_->measurement_jacobian(Twb.matrix(), p_G_Gps);
 
