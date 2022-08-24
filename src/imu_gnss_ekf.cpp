@@ -9,7 +9,9 @@
 #include "estimator/ekf.hpp"
 #include "sensor/gnss.hpp"
 
-Eigen::Vector3d e(0, 0, 0);
+Eigen::Vector3d sum_of_res(0, 0, 0), sum_of_res_sqaure(0, 0, 0), expect_of_res(0, 0, 0), variance_of_res(0, 0, 0);
+long long rescnt = 0;
+
 
 namespace cg {
 
@@ -92,9 +94,15 @@ void FusionNode::gps_callback(const sensor_msgs::NavSatFixConstPtr &gps_msg) {
 
   const auto &residual = ekf_ptr_->observer_ptr_->measurement_residual(Twb.matrix(), p_G_Gps);
 
-  std::cout << "res: " << residual.transpose() << std::endl;
-  e += residual;
-  std::cout << e.transpose() << std::endl;
+  std::cout << "number of res:" << ++rescnt << std::endl << "res: " << residual.transpose() << std::endl;
+  sum_of_res += residual;
+  sum_of_res_sqaure += residual * residual;
+  expect_of_res = sum_of_res / rescnt;
+  variance_of_res = sum_of_res_sqaure / rescnt - expect_of_res * expect_of_res;
+  std::cout << "sum of res:" << sum_of_res.transpose() << std::endl;
+  std::cout << "expect of res: " << expect_of_res.transpose() << std::endl;
+  std::cout << "variance of res: " << variance_of_res.transpose() << std::endl;
+
 
   const auto &H = ekf_ptr_->observer_ptr_->measurement_jacobian(Twb.matrix(), p_G_Gps);
 
