@@ -9,8 +9,7 @@
 #include "estimator/ekf.hpp"
 #include "sensor/gnss.hpp"
 
-Eigen::Vector3d e;
-e << 0, 0, 0;
+Eigen::Vector3d e(0, 0, 0);
 
 namespace cg {
 
