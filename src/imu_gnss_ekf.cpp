@@ -9,6 +9,10 @@
 #include "estimator/ekf.hpp"
 #include "sensor/gnss.hpp"
 
+Eigen::Vector3d sum_of_res(0, 0, 0), sum_of_res_sqaure(0, 0, 0), expect_of_res(0, 0, 0), variance_of_res(0, 0, 0), sqaure_of_expect_of_res(0, 0, 0);
+long long rescnt = 0;
+
+
 namespace cg {
 
 ANGULAR_ERROR State::kAngError = ANGULAR_ERROR::LOCAL_ANGULAR_ERROR;
@@ -17,10 +21,10 @@ class FusionNode {
  public:
   FusionNode(ros::NodeHandle &nh) : viewer_(nh) {
     double acc_n, gyr_n, acc_w, gyr_w;
-    nh.param("acc_noise", acc_n, 1e-2);
-    nh.param("gyr_noise", gyr_n, 1e-4);
-    nh.param("acc_bias_noise", acc_w, 1e-6);
-    nh.param("gyr_bias_noise", gyr_w, 1e-8);
+    nh.param("asdfsadf", acc_n, 2e-2);
+    nh.param("adsfasdf", gyr_n, 2e-4);
+    nh.param("asdfasdfasd", acc_w, 2e-6);
+    nh.param("adsfasdfad", gyr_w, 2e-8);
 
     const double sigma_pv = 10;
     const double sigma_rp = 10 * kDegreeToRadian;
@@ -90,7 +94,18 @@ void FusionNode::gps_callback(const sensor_msgs::NavSatFixConstPtr &gps_msg) {
 
   const auto &residual = ekf_ptr_->observer_ptr_->measurement_residual(Twb.matrix(), p_G_Gps);
 
-  std::cout << "res: " << residual.transpose() << std::endl;
+  std::cout << "number of res:" << ++rescnt << std::endl << "res: " << residual.transpose() << std::endl;
+  sum_of_res += residual;
+  sum_of_res_sqaure += residual * residual;
+  expect_of_res = sum_of_res / rescnt;
+  square_of_expect_of_res(0) = expect_of_res(0) * expect_of_res(0);
+  square_of_expect_of_res(1) = expect_of_res(1) * expect_of_res(1);
+  square_of_expect_of_res(2) = expect_of_res(2) * expect_of_res(2);
+  variance_of_res = sum_of_res_sqaure / rescnt - square_of_expect_of_res;
+  std::cout << "sum of res:" << sum_of_res.transpose() << std::endl;
+  std::cout << "expect of res: " << expect_of_res.transpose() << std::endl;
+  std::cout << "variance of res: " << variance_of_res.transpose() << std::endl;
+
 
   const auto &H = ekf_ptr_->observer_ptr_->measurement_jacobian(Twb.matrix(), p_G_Gps);
 
