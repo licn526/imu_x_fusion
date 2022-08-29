@@ -21,10 +21,10 @@ class FusionNode {
  public:
   FusionNode(ros::NodeHandle &nh) : viewer_(nh) {
     double acc_n, gyr_n, acc_w, gyr_w;
-    nh.param("acc_noise", acc_n, 1e-2);
-    nh.param("gyr_noise", gyr_n, 1e-4);
-    nh.param("acc_bias_noise", acc_w, 1e-6);
-    nh.param("gyr_bias_noise", gyr_w, 1e-8);
+    nh.param("asdfsadf", acc_n, 2e-2);
+    nh.param("adsfasdf", gyr_n, 2e-4);
+    nh.param("asdfasdfasd", acc_w, 2e-6);
+    nh.param("adsfasdfad", gyr_w, 2e-8);
 
     const double sigma_pv = 10;
     const double sigma_rp = 10 * kDegreeToRadian;
@@ -98,6 +98,7 @@ void FusionNode::gps_callback(const sensor_msgs::NavSatFixConstPtr &gps_msg) {
   sum_of_res += residual;
   sum_of_res_sqaure += residual * residual;
   expect_of_res = sum_of_res / rescnt;
+  variance_of_res = sum_of_res_sqaure / rescnt - expect_of_res * expect_of_res;
   std::cout << "sum of res:" << sum_of_res.transpose() << std::endl;
   std::cout << "expect of res: " << expect_of_res.transpose() << std::endl;
   std::cout << "variance of res: " << variance_of_res.transpose() << std::endl;
