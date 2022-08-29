@@ -9,7 +9,7 @@
 #include "estimator/ekf.hpp"
 #include "sensor/gnss.hpp"
 
-Eigen::Vector3d sum_of_res(0, 0, 0), sum_of_res_sqaure(0, 0, 0), expect_of_res(0, 0, 0), variance_of_res(0, 0, 0);
+Eigen::Vector3d sum_of_res(0, 0, 0), sum_of_res_sqaure(0, 0, 0), expect_of_res(0, 0, 0), variance_of_res(0, 0, 0), sqaure_of_expect_of_res(0, 0, 0);
 long long rescnt = 0;
 
 
@@ -98,7 +98,10 @@ void FusionNode::gps_callback(const sensor_msgs::NavSatFixConstPtr &gps_msg) {
   sum_of_res += residual;
   sum_of_res_sqaure += residual * residual;
   expect_of_res = sum_of_res / rescnt;
-  variance_of_res = sum_of_res_sqaure / rescnt - expect_of_res * expect_of_res;
+  square_of_expect_of_res(0) = expect_of_res(0) * expect_of_res(0);
+  square_of_expect_of_res(1) = expect_of_res(1) * expect_of_res(1);
+  square_of_expect_of_res(2) = expect_of_res(2) * expect_of_res(2);
+  variance_of_res = sum_of_res_sqaure / rescnt - square_of_expect_of_res;
   std::cout << "sum of res:" << sum_of_res.transpose() << std::endl;
   std::cout << "expect of res: " << expect_of_res.transpose() << std::endl;
   std::cout << "variance of res: " << variance_of_res.transpose() << std::endl;
