@@ -9,9 +9,9 @@
 #include "estimator/ekf.hpp"
 #include "sensor/gnss.hpp"
 
-Eigen::Vector3d sum_of_res(0, 0, 0), sum_of_res_sqaure(0, 0, 0), expect_of_res(0, 0, 0), variance_of_res(0, 0, 0), sqaure_of_expect_of_res(0, 0, 0);
+Eigen::Vector3d sum_of_res(0, 0, 0), expect_of_res(0, 0, 0);
 long long rescnt = 0;
-
+double ekfla, ekflon, ekfu;
 
 namespace cg {
 
@@ -21,62 +21,79 @@ class FusionNode {
  public:
   FusionNode(ros::NodeHandle &nh) : viewer_(nh) {
     double acc_n, gyr_n, acc_w, gyr_w;
-    nh.param("asdfsadf", acc_n, 2e-2);
-    nh.param("adsfasdf", gyr_n, 2e-4);
-    nh.param("asdfasdfasd", acc_w, 2e-6);
-    nh.param("adsfasdfad", gyr_w, 2e-8);
+    nh.param("asdfsadf", acc_n, 1e-2);
+    nh.param("adsfasdf", gyr_n, 1e-4);
+    nh.param("asdfasdfasd", acc_w, 1e-6);
+    nh.param("adsfasdfad", gyr_w, 1e-8);
 
     const double sigma_pv = 10;
     const double sigma_rp = 10 * kDegreeToRadian;
     const double sigma_yaw = 100 * kDegreeToRadian;
+    const double sigma_ba = 0.02;
+    const double sigma_bg = 0.02;
 
     ekf_ptr_ = std::make_unique<EKF>(acc_n, gyr_n, acc_w, gyr_w);
-    ekf_ptr_->state_ptr_->set_cov(sigma_pv, sigma_pv, sigma_rp, sigma_yaw, 0.02, 0.02);
+    ekf_ptr_->state_ptr_->set_cov(sigma_pv, sigma_pv, sigma_rp, sigma_yaw, sigma_ba, sigma_bg);
 
     ekf_ptr_->observer_ptr_ = std::make_shared<GNSS>();
 
     std::string topic_imu = "/imu/data";
-    std::string topic_gps = "/fix";
+    std::string topic_gps = "/imu/nav_sat_fix";
+    
 
     imu_sub_ = nh.subscribe<sensor_msgs::Imu>(topic_imu, 10, boost::bind(&EKF::imu_callback, ekf_ptr_.get(), _1));
-    gps_sub_ = nh.subscribe(topic_gps, 10, &FusionNode::gps_callback, this);
+    gps_sub_ = nh.subscribe<sensor_msgs::NavSatFix>(topic_gps, 10, &FusionNode::gps_callback, this);
+    
+    std::string topic_ekf = "/sbg/ekf_nav";
+    ekf_sub_ = nh.subscribe<sensor_msgs::NavSatFix>(topic_ekf, 10, &FusionNode::ekf_callback, this);
 
     // log files
-    file_gps_.open("fusion_gps.csv");
+    observability.open("observability.csv");
     file_state_.open("fusion_state.csv");
   }
 
   ~FusionNode() {
-    if (file_gps_.is_open()) file_gps_.close();
+    if (observability.is_open()) observability.close();
     if (file_state_.is_open()) file_state_.close();
   }
+  
 
   void gps_callback(const sensor_msgs::NavSatFixConstPtr &gps_msg);
-
+  void ekf_callback(const sensor_msgs::NavSatFixConstPtr &ekf_msg);
  private:
   ros::Subscriber imu_sub_;
   ros::Subscriber gps_sub_;
+  ros::Subscriber ekf_sub_;
 
   EKFPtr ekf_ptr_;
   Viewer viewer_;
 
-  std::ofstream file_gps_;
+  std::ofstream observability;
   std::ofstream file_state_;
 };
 
+void FusionNode::ekf_callback(const sensor_msgs::NavSatFixConstPtr &ekf_msg){
+    ekfla = ekf_msg->latitude;
+    ekflon = ekf_msg->longitude;
+    ekfu = ekf_msg->altitude;
+    std::cout << "*\n";
+}
+
 void FusionNode::gps_callback(const sensor_msgs::NavSatFixConstPtr &gps_msg) {
-  if (gps_msg->status.status != 2) {
+  /*if (gps_msg->status.status != 2) {
     printf("[cggos %s] ERROR: Bad GPS Message!!!\n", __FUNCTION__);
     return;
-  }
-
+  }*/
   GpsDataPtr gps_data_ptr = std::make_shared<GpsData>();
   gps_data_ptr->timestamp = gps_msg->header.stamp.toSec();
   gps_data_ptr->lla[0] = gps_msg->latitude;
   gps_data_ptr->lla[1] = gps_msg->longitude;
   gps_data_ptr->lla[2] = gps_msg->altitude;
-  gps_data_ptr->cov = Eigen::Map<const Eigen::Matrix3d>(gps_msg->position_covariance.data());
-
+  gps_data_ptr->cov.setZero();
+  gps_data_ptr->cov(0, 0) = 25;
+  gps_data_ptr->cov(1, 1) = 25;
+  gps_data_ptr->cov(2, 2) = 25;
+  
   if (!ekf_ptr_->inited_) {
     if (!ekf_ptr_->init(gps_data_ptr->timestamp)) return;
 
@@ -94,29 +111,51 @@ void FusionNode::gps_callback(const sensor_msgs::NavSatFixConstPtr &gps_msg) {
 
   const auto &residual = ekf_ptr_->observer_ptr_->measurement_residual(Twb.matrix(), p_G_Gps);
 
-  std::cout << "number of res:" << ++rescnt << std::endl << "res: " << residual.transpose() << std::endl;
+  std::cout << "number of res:" << ++rescnt << std::endl;
+  std::cout << "latitude: " << gps_data_ptr->lla[0] << ' ' << "longitude: " << gps_data_ptr->lla[1] << ' ' << "altitude: " << gps_data_ptr->lla[2] << std::endl;
+  std::cout << "res: " << residual.transpose() << std::endl;
+  
   sum_of_res += residual;
-  sum_of_res_sqaure += residual * residual;
   expect_of_res = sum_of_res / rescnt;
-  sqayre_of_expect_of_res(0) = expect_of_res(0) * expect_of_res(0);
-  sqaure_of_expect_of_res(1) = expect_of_res(1) * expect_of_res(1);
-  sqaure_of_expect_of_res(2) = expect_of_res(2) * expect_of_res(2);
-  variance_of_res = sum_of_res_sqaure / rescnt - square_of_expect_of_res;
+
   std::cout << "sum of res:" << sum_of_res.transpose() << std::endl;
   std::cout << "expect of res: " << expect_of_res.transpose() << std::endl;
-  std::cout << "variance of res: " << variance_of_res.transpose() << std::endl;
 
 
   const auto &H = ekf_ptr_->observer_ptr_->measurement_jacobian(Twb.matrix(), p_G_Gps);
 
   Eigen::Matrix<double, kStateDim, 3> K;
+
   const Eigen::Matrix3d &R = gps_data_ptr->cov;
+
   ekf_ptr_->update_K(H, R, K);
   ekf_ptr_->update_P(H, R, K);
   *ekf_ptr_->state_ptr_ = *ekf_ptr_->state_ptr_ + K * residual;
 
   std::cout << "acc bias: " << ekf_ptr_->state_ptr_->acc_bias.transpose() << std::endl;
   std::cout << "gyr bias: " << ekf_ptr_->state_ptr_->gyr_bias.transpose() << std::endl;
+  // print P(15 * 15)
+  std::cout << "P:\n";
+  for (int i = 0; i < 15; ++i) std::cout << ekf_ptr_->state_ptr_->cov(i, i) << ' ';
+  std::cout << std::endl; // 15 * 15
+  // print K(15 * 3)
+  std::cout << "K:\n";
+  for (int i = 0; i < 15; ++i) std::cout << K(i, i % 3) << ' ';
+  std::cout << std::endl;  // 15 * 3
+  // print R(3 * 3)
+  std::cout << "R:\n";
+  std::cout << R(0, 0) << ' ' << R(1, 1) << ' ' << R(2, 2);
+  std::cout << std::endl;  // 3 * 3
+  // print x(15 * 1)
+  std::cout << "x:\n"
+            << ekf_ptr_->state_ptr_->p_wb_.transpose() << std::endl 
+            << ekf_ptr_->state_ptr_->v_wb_.transpose() << std::endl
+            << ekf_ptr_->state_ptr_->Rwb_.transpose() << std::endl
+            << ekf_ptr_->state_ptr_->acc_bias.transpose() << std::endl
+            << ekf_ptr_->state_ptr_->gyr_bias.transpose() << std::endl;
+  // print H
+  std::cout << H << std::endl;
+  // std::cout << "Q:\n" << noise_cov_discret_time(dt) << std::endl;
   std::cout << "---------------------" << std::endl;
 
   // save data
@@ -130,9 +169,10 @@ void FusionNode::gps_callback(const sensor_msgs::NavSatFixConstPtr &gps_msg) {
     file_state_ << std::fixed << std::setprecision(15) << ekf_ptr_->state_ptr_->timestamp << ", "
                 << ekf_ptr_->state_ptr_->p_wb_[0] << ", " << ekf_ptr_->state_ptr_->p_wb_[1] << ", "
                 << ekf_ptr_->state_ptr_->p_wb_[2] << ", " << q_GI.x() << ", " << q_GI.y() << ", " << q_GI.z() << ", "
-                << q_GI.w() << ", " << lla[0] << ", " << lla[1] << ", " << lla[2] << std::endl;
+                << q_GI.w() << ", " << lla[0] << ", " << lla[1] << ", " << lla[2] << ", " << gps_data_ptr->lla[0] << ", "
+              << gps_data_ptr->lla[1] << ", " << gps_data_ptr->lla[2] << ", " << ekfla << ", " << ekflon << ", " << ekfu << std::endl;
 
-    file_gps_ << std::fixed << std::setprecision(15) << gps_data_ptr->timestamp << ", " << gps_data_ptr->lla[0] << ", "
+    observability << std::fixed << std::setprecision(15) << gps_data_ptr->timestamp << ", " << gps_data_ptr->lla[0] << ", "
               << gps_data_ptr->lla[1] << ", " << gps_data_ptr->lla[2] << std::endl;
   }
 }
@@ -146,6 +186,7 @@ int main(int argc, char **argv) {
   cg::FusionNode fusion_node(nh);
 
   ros::spin();
+
 
   return 0;
 }
