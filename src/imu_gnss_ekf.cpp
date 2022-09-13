@@ -12,6 +12,14 @@
 Eigen::Vector3d sum_of_res(0, 0, 0), expect_of_res(0, 0, 0);
 long long rescnt = 0;
 double ekfla, ekflon, ekfu;
+double zero_time = -1;
+
+const double kDegreeToRadian = M_PI / 180.;
+const double sigma_pv = 10;
+const double sigma_rp = 10 * kDegreeToRadian;
+const double sigma_yaw = sigma_rp * sigma_rp;
+const double sigma_ba = 0.02;
+const double sigma_bg = 0.02;
 
 namespace cg {
 
@@ -26,11 +34,7 @@ class FusionNode {
     nh.param("asdfasdfasd", acc_w, 1e-6);
     nh.param("adsfasdfad", gyr_w, 1e-8);
 
-    const double sigma_pv = 10;
-    const double sigma_rp = 10 * kDegreeToRadian;
-    const double sigma_yaw = 100 * kDegreeToRadian;
-    const double sigma_ba = 0.02;
-    const double sigma_bg = 0.02;
+    
 
     ekf_ptr_ = std::make_unique<EKF>(acc_n, gyr_n, acc_w, gyr_w);
     ekf_ptr_->state_ptr_->set_cov(sigma_pv, sigma_pv, sigma_rp, sigma_yaw, sigma_ba, sigma_bg);
@@ -50,11 +54,13 @@ class FusionNode {
     // log files
     observability.open("observability.csv");
     file_state_.open("fusion_state.csv");
+    //file_imu_data.open("imu_data.csv")
   }
 
   ~FusionNode() {
     if (observability.is_open()) observability.close();
     if (file_state_.is_open()) file_state_.close();
+    //if (file_imu_data.is_open()) file_imu_data.close();
   }
   
 
@@ -70,6 +76,7 @@ class FusionNode {
 
   std::ofstream observability;
   std::ofstream file_state_;
+  //std::ofstream file_imu_data;
 };
 
 void FusionNode::ekf_callback(const sensor_msgs::NavSatFixConstPtr &ekf_msg){
@@ -86,13 +93,15 @@ void FusionNode::gps_callback(const sensor_msgs::NavSatFixConstPtr &gps_msg) {
   }*/
   GpsDataPtr gps_data_ptr = std::make_shared<GpsData>();
   gps_data_ptr->timestamp = gps_msg->header.stamp.toSec();
+  if(zero_time < 0) zero_time = gps_msg->header.stamp.toSec();
   gps_data_ptr->lla[0] = gps_msg->latitude;
   gps_data_ptr->lla[1] = gps_msg->longitude;
   gps_data_ptr->lla[2] = gps_msg->altitude;
-  gps_data_ptr->cov.setZero();
+  gps_data_ptr->cov = Eigen::Map<const Eigen::Matrix3d>(gps_msg->position_covariance.data());
+  /*gps_data_ptr->cov.setZero();
   gps_data_ptr->cov(0, 0) = 25;
   gps_data_ptr->cov(1, 1) = 25;
-  gps_data_ptr->cov(2, 2) = 25;
+  gps_data_ptr->cov(2, 2) = 25;*/
   
   if (!ekf_ptr_->inited_) {
     if (!ekf_ptr_->init(gps_data_ptr->timestamp)) return;
@@ -167,13 +176,35 @@ void FusionNode::gps_callback(const sensor_msgs::NavSatFixConstPtr &gps_msg) {
 
     const Eigen::Quaterniond q_GI(ekf_ptr_->state_ptr_->Rwb_);
     file_state_ << std::fixed << std::setprecision(15) << ekf_ptr_->state_ptr_->timestamp << ", "
-                << ekf_ptr_->state_ptr_->p_wb_[0] << ", " << ekf_ptr_->state_ptr_->p_wb_[1] << ", "
-                << ekf_ptr_->state_ptr_->p_wb_[2] << ", " << q_GI.x() << ", " << q_GI.y() << ", " << q_GI.z() << ", "
-                << q_GI.w() << ", " << lla[0] << ", " << lla[1] << ", " << lla[2] << ", " << gps_data_ptr->lla[0] << ", "
-              << gps_data_ptr->lla[1] << ", " << gps_data_ptr->lla[2] << ", " << ekfla << ", " << ekflon << ", " << ekfu << std::endl;
+                 << ekf_ptr_->state_ptr_->p_wb_[0] << ", " << ekf_ptr_->state_ptr_->p_wb_[1] << ", "
+                << ekf_ptr_->state_ptr_->p_wb_[2] << ", " << ekf_ptr_->state_ptr_->v_wb_[0] << ", "
+                << ekf_ptr_->state_ptr_->v_wb_[1] << ", " << ekf_ptr_->state_ptr_->v_wb_[2] << ", " << q_GI.x() << ", "
+                << q_GI.y() << ", " << q_GI.z() << ", "
+                 << q_GI.w() << ", " << lla[0] << ", " << lla[1] << ", " << lla[2] << ", " << gps_data_ptr->lla[0]
+                 << ", " << gps_data_ptr->lla[1] << ", " << gps_data_ptr->lla[2] << ", " << ekfla << ", " << ekflon
+                 << ", " << ekfu
+                 << std::endl;
 
-    observability << std::fixed << std::setprecision(15) << gps_data_ptr->timestamp << ", " << gps_data_ptr->lla[0] << ", "
-              << gps_data_ptr->lla[1] << ", " << gps_data_ptr->lla[2] << std::endl;
+    observability << std::fixed << std::setprecision(15) 
+                  << gps_data_ptr->timestamp - zero_time << ", "
+                  << sqrt(sigma_pv * sigma_pv / ekf_ptr_->state_ptr_->cov(0, 0)) << ", "
+                  << sqrt(sigma_pv * sigma_pv / ekf_ptr_->state_ptr_->cov(1, 1)) << ", " 
+                  << sqrt(sigma_pv * sigma_pv / ekf_ptr_->state_ptr_->cov(2, 2)) << ", " 
+                  << sqrt(sigma_pv * sigma_pv / ekf_ptr_->state_ptr_->cov(3, 3)) << ", "
+                  << sqrt(sigma_pv * sigma_pv / ekf_ptr_->state_ptr_->cov(4, 4)) << ", " 
+                  << sqrt(sigma_pv * sigma_pv / ekf_ptr_->state_ptr_->cov(5, 5)) << ", " 
+                  << sqrt(sigma_rp * sigma_rp / ekf_ptr_->state_ptr_->cov(6, 6)) << ", "
+                  << sqrt(sigma_rp * sigma_rp / ekf_ptr_->state_ptr_->cov(7, 7)) << ", " 
+                  << sqrt(sigma_yaw / ekf_ptr_->state_ptr_->cov(8, 8)) << ", "
+                  << sqrt(sigma_ba * sigma_ba / ekf_ptr_->state_ptr_->cov(9, 9)) << ", "
+                  << sqrt(sigma_ba * sigma_ba / ekf_ptr_->state_ptr_->cov(10, 10)) << ", "
+                  << sqrt(sigma_ba * sigma_ba / ekf_ptr_->state_ptr_->cov(11, 11)) << ", "
+                  << sqrt(sigma_bg * sigma_bg / ekf_ptr_->state_ptr_->cov(12, 12)) << ", "
+                  << sqrt(sigma_bg * sigma_bg / ekf_ptr_->state_ptr_->cov(13, 13)) << ", "
+                  << sqrt(sigma_bg * sigma_bg / ekf_ptr_->state_ptr_->cov(14, 14)) << std::endl;
+
+     /*<< ekf_ptr_->state_ptr_->cov(0, 0) / (sigma_pv * sigma_pv) << ", " << ekf_ptr_->state_ptr_->cov(1, 1) / (sigma_pv * sigma_pv) << ", " << ekf_ptr_->state_ptr_->cov(2, 2) / (sigma_pv * sigma_pv) << ", " << ekf_ptr_->state_ptr_->cov(3, 3) / (sigma_pv * sigma_pv) << ", " << ekf_ptr_->state_ptr_->cov(4, 4) / (sigma_pv * sigma_pv) << ", " << ekf_ptr_->state_ptr_->cov(5, 5) / (sigma_pv * sigma_pv) << ", " << ekf_ptr_->state_ptr_->cov(6, 6) / (sigma_rp * sigma_rp) << ", " << ekf_ptr_->state_ptr_->cov(7, 7) / (sigma_rp * sigma_rp) << ", " << ekf_ptr_->state_ptr_->cov(8, 8) / sigma_yaw << ", " << ekf_ptr_->state_ptr_->cov(9, 9) / (sigma_ba * sigma_ba) << ", " << ekf_ptr_->state_ptr_->cov(10, 10) / (sigma_ba * sigma_ba) << ", " << ekf_ptr_->state_ptr_->cov(11, 11) / (sigma_ba * sigma_ba) << ", " << ekf_ptr_->state_ptr_->cov(12, 12) / (sigma_bg * sigma_bg) << ", " << ekf_ptr_->state_ptr_->cov(13, 13) / (sigma_bg * sigma_bg) << ", " << ekf_ptr_->state_ptr_->cov(14, 14) / (sigma_bg * sigma_bg) << std::endl;*/
+    
   }
 }
 
